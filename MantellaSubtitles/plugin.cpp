@@ -15,7 +15,7 @@ void InitializeLogging() {
     *path += L".log";
 
     std::shared_ptr<spdlog::logger> log;
-    if (IsDebuggerPresent()) {
+    if (REX::W32::IsDebuggerPresent()) {
         log = std::make_shared<spdlog::logger>(
             "Global", std::make_shared<spdlog::sinks::msvc_sink_mt>());
     } else {
@@ -110,7 +110,7 @@ SKSEPluginLoad(const SKSE::LoadInterface *skse) {
     auto version = plugin->GetVersion();
     SKSE::log::info("{} {} is loading...", plugin->GetName(), version);
 
-    SKSE::Init(skse);
+    SKSE::Init(skse, { .log = false });
 
     InitializePapyrus();
     InitializeEventHandlers();

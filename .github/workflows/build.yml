@@ -1,0 +1,47 @@
+name: Build
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+          actions-cache-folder: .xmake-cache
+
+      # CommonLib is pinned to a release tag, so its xmake script downloads the prebuilt library
+      # instead of compiling it. Cache the download and xmake's packages (cpr, curl, spdlog etc.) between runs
+      - uses: actions/cache@v4
+        with:
+          path: |
+            lib/commonlibsse-ng/build/.prebuilt
+            ~/AppData/Local/.xmake/packages
+          key: deps-${{ hashFiles('.gitmodules', 'xmake.lua') }}-${{ github.sha }}
+          restore-keys: deps-${{ hashFiles('.gitmodules', 'xmake.lua') }}-
+
+      - name: Build
+        run: |
+          xmake config --yes --mode=releasedbg
+          xmake build --yes SKSE_HTTP
+          xmake build --yes MantellaLauncher
+          xmake build --yes MantellaSubtitles
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MantellaCorePlugins
+          path: |
+            build/windows/x64/releasedbg/SKSE_HTTP.dll
+            build/windows/x64/releasedbg/SKSE_HTTP.pdb
+            build/windows/x64/releasedbg/MantellaLauncher.dll
+            build/windows/x64/releasedbg/MantellaLauncher.pdb
+            build/windows/x64/releasedbg/MantellaSubtitles.dll
+            build/windows/x64/releasedbg/MantellaSubtitles.pdb
+          if-no-files-found: error
