@@ -1,10 +1,14 @@
 #pragma once
+#include <mutex>
 #include "TypedDictionary.h"
 
 namespace SKSE_HTTP_TypedDictionary
 {
     extern std::unordered_map<int, std::shared_ptr<TypedDictionary>> dicNestedDictionariesValues;
     extern int counter;
+    // Held by everything that reads or changes the dictionaries: Papyrus uses them from its threads while replies are turned into
+    // dictionaries on the threads that send the requests. Recursive, as building or reading a dictionary goes through its nested ones
+    extern std::recursive_mutex dictionariesMutex;
 
     int createDictionary();
     void clearAll();

@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <mutex>
+#include <thread>
 #include <Shlobj.h>
 #include <cpr\cpr.h>
 #include <SKSE_HTTP_TypedDictionary.h>
@@ -49,6 +51,7 @@ bool test_utf8(std::string input) {
 
 json getJsonFromHandle(int typedDictionaryHandle)
 {
+    std::lock_guard<std::recursive_mutex> lock(SKSE_HTTP_TypedDictionary::dictionariesMutex);
     std::shared_ptr<TypedDictionary> dict = SKSE_HTTP_TypedDictionary::dicNestedDictionariesValues[typedDictionaryHandle];
     json jsonToUse;
     if (dict) {
@@ -89,6 +92,7 @@ json getJsonFromHandle(int typedDictionaryHandle)
 
 int generateDictionaryFromJson(json jsonToUse)
 {
+    std::lock_guard<std::recursive_mutex> lock(SKSE_HTTP_TypedDictionary::dictionariesMutex);
     int handle = SKSE_HTTP_TypedDictionary::createDictionary();
     for (auto& el : jsonToUse.items())
     {
@@ -135,10 +139,14 @@ int generateDictionaryFromJson(json jsonToUse)
     return handle;
 };
 
+// Replies are handed to Papyrus one at a time, as they always were. Only their requests run side by side
+std::mutex dispatchMutex;
+
 int sendHttpRequestResultToSkyrimEvent(std::string completeReply, RE::BSFixedString papyrusFunctionToCall) {
     try {
         json reply = json::parse(completeReply);
         int newHandle = generateDictionaryFromJson(reply);
+        std::lock_guard<std::mutex> lock(dispatchMutex);
         auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
         auto eventArgs = RE::MakeFunctionArguments((int)newHandle);
         RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> callback;
@@ -175,10 +183,19 @@ void sendLocalhostHttpRequest(RE::StaticFunctionTag*, int typedDictionaryHandle,
         auto start_send = std::chrono::steady_clock::now();
         std::string textToSend = newJson.dump();
         std::string url = "http://localhost:" + std::to_string(port) + "/" + route;
-        cpr::PostCallback(postCallbackMethod, cpr::Url{url}, cpr::ConnectTimeout{timeout},
-                          cpr::Authentication{"user", "pass", cpr::AuthMode::BASIC},
-                          cpr::Header{{"Content-Type", "application/json"}},
-                          cpr::Header{{"accept", "application/json"}}, cpr::Body{textToSend});
+        // Each request on its own thread, so one waiting for a slow reply never holds up the ones sent after it, like the end of
+        // the conversation. Not cpr::PostCallback: after the first requests, cpr's thread pool miscounts its idle threads and stops
+        // adding any, so every request waited for the one before
+        std::thread([url, timeout, textToSend]() {
+            try {
+                cpr::Response response = cpr::Post(cpr::Url{url}, cpr::ConnectTimeout{timeout},
+                                                   cpr::Authentication{"user", "pass", cpr::AuthMode::BASIC},
+                                                   cpr::Header{{"Content-Type", "application/json"}},
+                                                   cpr::Header{{"accept", "application/json"}}, cpr::Body{textToSend});
+                postCallbackMethod(response);
+            } catch (...) {
+            }
+        }).detach();
     } catch (...) {
     
     }

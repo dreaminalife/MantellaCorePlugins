@@ -22,6 +22,10 @@ The first commit is the original code, copied unchanged. Everything after it is 
 - **MantellaSubtitles:** two log lines print `subtitle.c_str()`, because the new logger can't print a game string directly. `IsDebuggerPresent` comes from CommonLib's Windows functions, and `SKSE::Init` is told not to replace the plugin's own log file.
 - **MantellaLauncher:** no code changes.
 
+Fixes since then:
+
+- **SKSE_HTTP: requests no longer wait for each other.** The original sent requests through cpr's shared thread pool, which miscounts its idle threads after the first requests and then runs only one request at a time. So ending a conversation, interrupting or Show waited until the AI's reply came back. Each request now runs on its own thread, and a lock keeps the dictionaries safe while replies are read in alongside Papyrus.
+
 ## Building
 
 The DLLs are built by GitHub Actions on every push (`.github/workflows/build.yml`); download them from the run's Artifacts. To build locally you need VS 2022 with the C++ workload, CMake (for the HTTP library) and [xmake](https://xmake.io) 3.0+:
